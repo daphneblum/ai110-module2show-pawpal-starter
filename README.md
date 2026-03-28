@@ -32,6 +32,16 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Smarter Scheduling
+
+Beyond the core daily planner, `pawpal_system.py` includes several algorithms that make scheduling more useful for real pet owners.
+
+**Time-based sorting** — `Scheduler.sort_by_time()` orders any list of tasks by their `preferred_time` field (stored as an `"HH:MM"` string). Times are parsed into `(hour, minute)` integer tuples for accurate numeric comparison, and tasks without a preferred time are placed at the end.
+
+**Recurring tasks** — Tasks can be marked `"daily"` or `"weekly"`. When `Scheduler.complete_task()` is called, it marks the task done and automatically adds the next occurrence to the pet's task list with an updated due date (`timedelta` of 1 or 7 days) and an incremented ID (e.g. `t1 → t1_r1 → t1_r2`). One-time tasks are unaffected.
+
+**Conflict detection** — `Scheduler.detect_conflicts()` checks every unique pair of scheduled tasks using the standard interval overlap test (`A.start < B.end and B.start < A.end`). It returns a list of plain-English warning strings rather than raising an exception, so the app stays running and the owner can decide how to resolve the clash. Back-to-back tasks are not flagged.
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.
