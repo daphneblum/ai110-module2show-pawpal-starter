@@ -1,6 +1,8 @@
 import streamlit as st
 from pawpal_system import Owner, Pet, Task, Scheduler, TaskCategory, Priority
 
+PRIORITY_BADGE = {Priority.HIGH: "🔴 High", Priority.MEDIUM: "🟡 Medium", Priority.LOW: "🟢 Low"}
+
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 st.title("🐾 PawPal+")
 
@@ -50,11 +52,21 @@ if st.button("Add task"):
     st.success(f"Added: {new_task}")
 
 if pet.tasks:
-    st.write(f"Tasks for {pet.name}:")
-    st.table([
-        {"title": t.title, "duration (min)": t.duration_minutes, "priority": t.priority.value}
-        for t in pet.tasks
-    ])
+    scheduler = Scheduler()
+    sorted_tasks = scheduler.prioritize_tasks(pet.tasks)
+    st.write(f"**{len(sorted_tasks)} pending task(s) for {pet.name}** — sorted by priority:")
+    st.dataframe(
+        [
+            {
+                "Priority": PRIORITY_BADGE[t.priority],
+                "Task": t.title,
+                "Duration (min)": t.duration_minutes,
+            }
+            for t in sorted_tasks
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -65,9 +77,55 @@ st.subheader("Build Schedule")
 
 if st.button("Generate schedule"):
     plan = owner.generate_plan()         # <- Owner.generate_plan()
+    scheduler = Scheduler()
+
+    # --- Time summary metrics ---
     st.subheader("Today's Schedule")
-    st.text(plan.get_summary())          # <- DailyPlan.get_summary()
+    time_used = plan.total_minutes_used
+    time_free = plan.total_minutes_available - time_used
+    col_used, col_free = st.columns(2)
+    col_used.metric("Time Scheduled", f"{time_used} min")
+    col_free.metric("Time Remaining", f"{time_free} min")
+
+    # --- Schedule table ---
+    if plan.scheduled_tasks:
+        st.dataframe(
+            [
+                {
+                    "Time": f"{st.start_time.strftime('%H:%M')}–{st.end_time.strftime('%H:%M')}",
+                    "Pet": st.pet_name,
+                    "Task": st.task.title,
+                    "Duration (min)": st.task.duration_minutes,
+                    "Priority": PRIORITY_BADGE[st.task.priority],
+                }
+                for st in plan.scheduled_tasks
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No tasks could be scheduled. Try adding tasks or increasing available time.")
+
+    # --- Conflict warnings ---
+    # Conflicts mean two tasks overlap in time — a pet owner needs to know
+    # exactly which tasks clash and what they can do about it, not just that
+    # something went wrong. Each conflict is shown as its own st.warning so
+    # multiple problems are visually distinct and easy to scan.
+    conflicts = scheduler.detect_conflicts(plan)  # <- Scheduler.detect_conflicts()
+    if conflicts:
+        st.subheader(f"⚠️ {len(conflicts)} Scheduling Conflict(s) Found")
+        for conflict in conflicts:
+            # Strip the leading "WARNING: " prefix from the raw message
+            detail = conflict.removeprefix("WARNING: ")
+            st.warning(
+                f"**Overlap detected:** {detail}\n\n"
+                "**What to do:** Shorten one of these tasks, or stagger their start times.",
+                icon="⚠️",
+            )
+    else:
+        st.success("No conflicts — your schedule looks good!", icon="✅")
+
+    # --- Explanation ---
     st.divider()
     st.subheader("Why each task was chosen")
-    scheduler = Scheduler()
     st.text(scheduler.explain_plan(plan))  # <- Scheduler.explain_plan()

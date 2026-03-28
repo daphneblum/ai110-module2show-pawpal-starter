@@ -22,6 +22,32 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+### Owner & pet profile
+Set up an owner with a daily time budget and register one or more pets. Each pet maintains its own independent task list, and all pets are considered together when a plan is generated.
+
+### Task management
+Add tasks to any pet with a title, category (walk, feeding, medication, grooming, enrichment, or other), duration in minutes, and priority level. Tasks can be marked complete or removed by ID at any time.
+
+### Priority-based scheduling
+When generating a daily plan, PawPal+ sorts all pending tasks across all pets from HIGH to MEDIUM to LOW, then greedily fills the available time budget in that order. Tasks that do not fit within the remaining time are skipped rather than truncated, so every scheduled task runs to completion.
+
+### Time-based sorting
+Tasks can be assigned an optional preferred start time (`HH:MM`). `Scheduler.sort_by_time()` orders any list of tasks chronologically by parsing preferred times into numeric hour/minute tuples for accurate comparison. Tasks without a preferred time are placed at the end.
+
+### Recurring tasks
+Tasks can be set to repeat `"daily"` or `"weekly"`. When `Scheduler.complete_task()` is called, it marks the task done and automatically registers the next occurrence on the pet's task list with an updated due date and an incremented ID (e.g. `t1 → t1_r1 → t1_r2`). One-time tasks are unaffected.
+
+### Conflict detection
+`Scheduler.detect_conflicts()` checks every unique pair of scheduled tasks using the standard interval overlap test. It returns plain-English warning strings rather than raising an exception, so the app stays running and the owner can decide how to resolve each clash. Back-to-back tasks are not flagged.
+
+### Schedule explanation
+After a plan is generated, `Scheduler.explain_plan()` produces a human-readable summary of each scheduled task — including its time window, which pet it belongs to, and why it was chosen — so the owner always understands the reasoning behind the plan.
+
+### Multi-pet support
+A single owner can register multiple pets. `Scheduler.build_plan()` collects pending tasks across all pets, schedules them within one shared time budget, and labels each scheduled task with the pet's name so the owner knows who each task is for.
+
 ## Getting started
 
 ### Setup
@@ -80,3 +106,8 @@ The core scheduling behaviors — priority ordering, time-budget enforcement, re
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+
+### 📸 Demo
+<a href=" target=">
+<a href="/images/screenshot.png" target="_blank"><img src='/course_images/ai110/your_screenshot_name.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
