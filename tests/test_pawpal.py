@@ -3,7 +3,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from pawpal_system import Owner, Pet, Task, Scheduler, DailyPlan, TaskCategory, Priority
+from datetime import date, time, timedelta
+from pawpal_system import Owner, Pet, Task, Scheduler, DailyPlan, ScheduledTask, TaskCategory, Priority
 
 
 # --- Fixtures ---
@@ -169,3 +170,167 @@ class TestDailyPlan:
         owner = make_owner()
         plan = owner.generate_plan()
         assert "No tasks" in plan.get_summary()
+
+
+# --- Sorting tests ---
+
+class TestSortByTime:
+    def test_timed_tasks_returned_in_chronological_order(self):
+        tasks = [
+            Task(id="t1", title="Lunch", category=TaskCategory.FEEDING,
+                 duration_minutes=10, priority=Priority.MEDIUM, preferred_time="12:00"),
+            Task(id="t2", title="Morning walk", category=TaskCategory.WALK,
+                 duration_minutes=20, priority=Priority.HIGH, preferred_time="08:00"),
+            Task(id="t3", title="Evening meds", category=TaskCategory.MEDICATION,
+                 duration_minutes=5, priority=Priority.HIGH, preferred_time="18:30"),
+        ]
+        result = Scheduler().sort_by_time(tasks)
+        assert [t.preferred_time for t in result] == ["08:00", "12:00", "18:30"]
+
+    def test_untimed_tasks_sort_to_end(self):
+        tasks = [
+            Task(id="t1", title="Grooming", category=TaskCategory.GROOMING,
+                 duration_minutes=30, priority=Priority.LOW, preferred_time=""),
+            Task(id="t2", title="Walk", category=TaskCategory.WALK,
+                 duration_minutes=20, priority=Priority.HIGH, preferred_time="07:00"),
+        ]
+        result = Scheduler().sort_by_time(tasks)
+        assert result[0].preferred_time == "07:00"
+        assert result[-1].preferred_time == ""
+
+    def test_original_list_is_not_mutated(self):
+        tasks = [
+            Task(id="t1", title="Walk", category=TaskCategory.WALK,
+                 duration_minutes=20, priority=Priority.HIGH, preferred_time="10:00"),
+            Task(id="t2", title="Feed", category=TaskCategory.FEEDING,
+                 duration_minutes=10, priority=Priority.MEDIUM, preferred_time="08:00"),
+        ]
+        original_order = [t.id for t in tasks]
+        Scheduler().sort_by_time(tasks)
+        assert [t.id for t in tasks] == original_order
+
+
+# --- Recurrence tests ---
+
+class TestRecurrence:
+    def test_completing_daily_task_creates_next_occurrence(self):
+        pet = make_pet()
+        task = Task(id="t1", title="Morning walk", category=TaskCategory.WALK,
+                    duration_minutes=20, priority=Priority.HIGH,
+                    recurrence="daily", due_date=date(2026, 3, 28))
+        pet.add_task(task)
+
+        next_task = Scheduler().complete_task(task, pet)
+
+        assert next_task is not None
+        assert next_task.due_date == date(2026, 3, 29)
+
+    def test_completing_daily_task_increments_id(self):
+        pet = make_pet()
+        task = Task(id="t1", title="Walk", category=TaskCategory.WALK,
+                    duration_minutes=20, priority=Priority.HIGH,
+                    recurrence="daily", due_date=date(2026, 3, 28))
+        pet.add_task(task)
+
+        next_task = Scheduler().complete_task(task, pet)
+        assert next_task.id == "t1_r1"
+
+        # Complete the recurrence — should become t1_r2, not t1_r1_r1
+        pet.add_task(next_task)
+        second = Scheduler().complete_task(next_task, pet)
+        assert second.id == "t1_r2"
+
+    def test_completing_weekly_task_advances_by_seven_days(self):
+        pet = make_pet()
+        task = Task(id="t2", title="Bath", category=TaskCategory.GROOMING,
+                    duration_minutes=45, priority=Priority.MEDIUM,
+                    recurrence="weekly", due_date=date(2026, 3, 28))
+        pet.add_task(task)
+
+        next_task = Scheduler().complete_task(task, pet)
+
+        assert next_task is not None
+        assert next_task.due_date == date(2026, 4, 4)
+
+    def test_completing_one_time_task_returns_none(self):
+        pet = make_pet()
+        task = Task(id="t3", title="Vet visit", category=TaskCategory.OTHER,
+                    duration_minutes=60, priority=Priority.HIGH,
+                    recurrence="")
+        pet.add_task(task)
+
+        result = Scheduler().complete_task(task, pet)
+
+        assert result is None
+
+    def test_completed_task_is_marked_done(self):
+        pet = make_pet()
+        task = Task(id="t4", title="Walk", category=TaskCategory.WALK,
+                    duration_minutes=20, priority=Priority.MEDIUM,
+                    recurrence="daily", due_date=date(2026, 3, 28))
+        pet.add_task(task)
+        Scheduler().complete_task(task, pet)
+        assert task.completed is True
+
+    def test_next_occurrence_added_to_pet(self):
+        pet = make_pet()
+        task = Task(id="t5", title="Walk", category=TaskCategory.WALK,
+                    duration_minutes=20, priority=Priority.HIGH,
+                    recurrence="daily", due_date=date(2026, 3, 28))
+        pet.add_task(task)
+        Scheduler().complete_task(task, pet)
+        ids = [t.id for t in pet.tasks]
+        assert "t5_r1" in ids
+
+
+# --- Conflict detection tests ---
+
+class TestDetectConflicts:
+    def _make_plan(self, slots: list[tuple[str, str, str, str]]) -> DailyPlan:
+        """Helper: slots = [(pet_name, title, 'HH:MM', 'HH:MM'), ...]"""
+        plan = DailyPlan(plan_date=date.today(), owner_name="Jordan",
+                         total_minutes_available=480)
+        for pet_name, title, start_str, end_str in slots:
+            task = Task(id=title, title=title, category=TaskCategory.WALK,
+                        duration_minutes=0, priority=Priority.MEDIUM)
+            sh, sm = (int(x) for x in start_str.split(":"))
+            eh, em = (int(x) for x in end_str.split(":"))
+            plan.add_scheduled_task(ScheduledTask(
+                task=task,
+                pet_name=pet_name,
+                start_time=time(sh, sm),
+                end_time=time(eh, em),
+                reason="test",
+            ))
+        return plan
+
+    def test_overlapping_tasks_flagged(self):
+        plan = self._make_plan([
+            ("Mochi", "Walk",  "09:00", "09:30"),
+            ("Luna",  "Feed",  "09:15", "09:45"),
+        ])
+        warnings = Scheduler().detect_conflicts(plan)
+        assert len(warnings) == 1
+        assert "Walk" in warnings[0]
+        assert "Feed" in warnings[0]
+
+    def test_back_to_back_tasks_not_flagged(self):
+        plan = self._make_plan([
+            ("Mochi", "Walk", "09:00", "09:30"),
+            ("Luna",  "Feed", "09:30", "10:00"),
+        ])
+        warnings = Scheduler().detect_conflicts(plan)
+        assert warnings == []
+
+    def test_no_tasks_returns_no_warnings(self):
+        plan = DailyPlan(plan_date=date.today(), owner_name="Jordan",
+                         total_minutes_available=120)
+        assert Scheduler().detect_conflicts(plan) == []
+
+    def test_identical_time_window_flagged(self):
+        plan = self._make_plan([
+            ("Mochi", "Walk", "10:00", "10:30"),
+            ("Luna",  "Feed", "10:00", "10:30"),
+        ])
+        warnings = Scheduler().detect_conflicts(plan)
+        assert len(warnings) == 1

@@ -42,6 +42,35 @@ Beyond the core daily planner, `pawpal_system.py` includes several algorithms th
 
 **Conflict detection** — `Scheduler.detect_conflicts()` checks every unique pair of scheduled tasks using the standard interval overlap test (`A.start < B.end and B.start < A.end`). It returns a list of plain-English warning strings rather than raising an exception, so the app stays running and the owner can decide how to resolve the clash. Back-to-back tasks are not flagged.
 
+## Testing PawPal+
+
+### Running the tests
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+### What the tests cover
+
+The suite contains 31 tests across six classes:
+
+| Class | What it verifies |
+|---|---|
+| `TestTask` | `mark_complete()` flips the flag; `__str__` includes priority and title |
+| `TestPet` | Adding, removing, and filtering tasks; missing IDs don't raise |
+| `TestOwner` | Pet registration; `generate_plan()` returns a `DailyPlan` with the correct owner name |
+| `TestScheduler` | Priority ordering (HIGH → MEDIUM → LOW); time-budget enforcement; multi-pet plans |
+| `TestDailyPlan` | `total_minutes_used` sum; `get_summary()` content for populated and empty plans |
+| `TestSortByTime` | Chronological ordering of timed tasks; untimed tasks sorted to the end; original list not mutated |
+| `TestRecurrence` | Daily/weekly next-occurrence dates; ID chain (`t1 → t1_r1 → t1_r2`); one-time tasks return `None`; new task registered on pet |
+| `TestDetectConflicts` | Overlapping windows flagged; back-to-back windows not flagged; identical windows flagged; empty plan returns no warnings |
+
+### Confidence level
+
+**4 / 5 stars**
+
+The core scheduling behaviors — priority ordering, time-budget enforcement, recurrence chains, conflict detection, and time-based sorting — are all exercised with both happy-path and edge-case scenarios, and all 31 tests pass. One star is withheld because the `build_plan` scheduler is greedy (it skips tasks that don't fit without backtracking), which can leave time on the table in ways the current tests don't fully stress-test. Integration-level testing against the Streamlit UI is also not yet covered.
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.
