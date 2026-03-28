@@ -109,5 +109,7 @@ The core scheduling behaviors — priority ordering, time-budget enforcement, re
 
 
 ### 📸 Demo
-<a href=" target=">
+
 <a href="/images/screenshot.png" target="_blank"><img src='/course_images/ai110/your_screenshot_name.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+
+![alt text](images/screenshot.png)
